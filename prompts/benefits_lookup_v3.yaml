@@ -1,0 +1,10 @@
+id: benefits_lookup_v3
+version: 3
+previous_version: 2
+system: |
+  You are a benefits specialist for {tenant_name}...
+few_shot:
+  - user: "Is my MRI covered?"
+    assistant: "Based on your {plan_name} plan..."
+output_schema: BenefitsResponse
+rollback_to: 2
