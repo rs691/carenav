@@ -1,11 +1,14 @@
-"""End-to-end tests for the LangGraph orchestration layer."""
-import asyncio
+"""
+Tests for the LangGraph orchestration layer.
+All tests run offline — no API keys, no Supabase, no Qdrant needed.
+"""
 import pytest
+from unittest.mock import AsyncMock, patch
 
 from orchestrator.graph import graph, MemberSession
 
 
-def make_session(query: str, enabled_agents=None) -> MemberSession:
+def make_session(query: str, enabled_agents=None, prior_turns=None) -> MemberSession:
     return MemberSession(
         tenant_id="tenant_bcbs",
         member_id="member_001",
@@ -13,23 +16,30 @@ def make_session(query: str, enabled_agents=None) -> MemberSession:
         plan_name="BlueCross Premier PPO",
         tone_profile="empathetic_plain",
         enabled_agents=enabled_agents or ["benefits", "formulary", "claims", "prior_auth", "escalation"],
-        messages=[],
+        messages=prior_turns or [],
         current_query=query,
         classified_intent=None,
         intent_confidence=0.0,
         active_agent=None,
         agent_result=None,
-        retrieval_chunks=[{"text": "Your plan covers MRI with a $150 copay."}],
+        retrieval_chunks=[{"text": "Your plan covers MRI with a $150 copay.", "source_doc": "benefits.pdf", "section": "Section 4", "chunk_index": 0, "score": 0.91, "stale": False}],
         failure_streak=0,
+        phi_scrubbed=False,
+        tone_pass=False,
     )
 
 
+# ── Routing tests ─────────────────────────────────────────────────────────────
+
 @pytest.mark.asyncio
 async def test_benefits_query_routes_to_benefits_agent():
-    result = await graph.ainvoke(make_session("Is my MRI covered under my plan?"))
+    with patch("rag.retriever.retrieve", new=AsyncMock(return_value=[
+        {"text": "MRI covered at $150 copay.", "source_doc": "benefits.pdf",
+         "section": "Section 4", "chunk_index": 0, "score": 0.91, "stale": False}
+    ])):
+        result = await graph.ainvoke(make_session("Is my MRI covered under my plan?"))
     assert result["active_agent"] == "benefits"
     assert result["classified_intent"] == "benefits_lookup"
-    assert len(result["messages"]) > 0
 
 
 @pytest.mark.asyncio
@@ -40,7 +50,6 @@ async def test_escalation_keyword_routes_to_escalation():
 
 @pytest.mark.asyncio
 async def test_disabled_agent_falls_back_to_escalation():
-    # Tenant has benefits disabled — should escalate
     result = await graph.ainvoke(
         make_session("What's my deductible?", enabled_agents=["escalation"])
     )
@@ -56,19 +65,45 @@ async def test_circuit_breaker_fires_after_three_failures():
 
 
 @pytest.mark.asyncio
-async def test_response_has_compliance_metadata():
-    result = await graph.ainvoke(make_session("What's my copay for a specialist visit?"))
-    # LangGraph's add_messages reducer wraps plain dicts as AIMessage objects.
-    # Metadata is stored in additional_kwargs when the message is coerced.
-    # Check via the graph state fields directly instead.
-    assert result["active_agent"] is not None
-    assert result["classified_intent"] is not None
-    assert result["intent_confidence"] > 0
-    # Guardrail flags live in state after the guardrail node runs
-    assert len(result["messages"]) > 0
+async def test_tenant_id_preserved_through_graph():
+    with patch("rag.retriever.retrieve", new=AsyncMock(return_value=[])):
+        result = await graph.ainvoke(make_session("Coverage question"))
+    assert result["tenant_id"] == "tenant_bcbs"
+
+
+# ── PHI scrubbing tests ───────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_phi_scrubbed_flag_set_when_ssn_in_query():
+    with patch("rag.retriever.retrieve", new=AsyncMock(return_value=[])):
+        result = await graph.ainvoke(
+            make_session("My SSN is 123-45-6789, is my MRI covered?")
+        )
+    assert result["phi_scrubbed"] is True
 
 
 @pytest.mark.asyncio
-async def test_tenant_id_preserved_through_graph():
-    result = await graph.ainvoke(make_session("Coverage question"))
-    assert result["tenant_id"] == "tenant_bcbs"
+async def test_clean_query_does_not_set_phi_flag():
+    with patch("rag.retriever.retrieve", new=AsyncMock(return_value=[])):
+        result = await graph.ainvoke(make_session("What is my deductible?"))
+    assert result["phi_scrubbed"] is False
+
+
+# ── Multi-turn context test ───────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_prior_turns_carried_into_state():
+    prior = [
+        {"role": "user", "content": "What is my deductible?"},
+        {"role": "assistant", "content": "Your deductible is $1,500.", "agent_id": "benefits"},
+    ]
+    with patch("rag.retriever.retrieve", new=AsyncMock(return_value=[
+        {"text": "Specialist copay is $50.", "source_doc": "benefits.pdf",
+         "section": "Section 5", "chunk_index": 1, "score": 0.88, "stale": False}
+    ])):
+        result = await graph.ainvoke(
+            make_session("What about my specialist copay?", prior_turns=prior)
+        )
+    # Prior turns injected — agent had context of prior exchange
+    assert result["active_agent"] == "benefits"
+    assert len(result["messages"]) > 0

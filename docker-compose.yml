@@ -1,0 +1,41 @@
+# docker-compose.yml
+# ───────────────────
+# Runs the full CareNav stack locally in one command:
+#   docker compose up
+#
+# Services:
+#   api      — FastAPI backend (hot-reload via volume mount)
+#   qdrant   — Vector DB (persists data to ./qdrant_storage)
+#
+# Supabase is not included here — use the cloud free tier.
+# Set your keys in .env before running.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - APP_ENV=development
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - qdrant
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage

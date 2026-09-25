@@ -20,9 +20,12 @@ from langgraph.graph.message import add_messages
 
 from agents.base import AgentResult, MemberContext
 from agents.benefits import BenefitsAgent
+from agents.claims import ClaimsAgent
 from agents.escalation import EscalationAgent
-from core.tenant import TenantConfig
+from agents.formulary import FormularyAgent
+from agents.prior_auth import PriorAuthAgent
 from middleware.guardrails import guardrail
+from orchestrator.classifier import classify_intent_llm
 
 # ---------------------------------------------------------------------------
 # State schema
@@ -53,7 +56,17 @@ class MemberSession(TypedDict):
 
 AGENT_REGISTRY = {
     "benefits": BenefitsAgent(),
+    "formulary": FormularyAgent(),
+    "claims": ClaimsAgent(),
+    "prior_auth": PriorAuthAgent(),
     "escalation": EscalationAgent(),
+}
+
+INTENT_DOC_TYPE = {
+    "benefits_lookup": "benefits",
+    "formulary_lookup": "formulary",
+    "prior_auth_status": "policy",
+    "claim_status": "policy",
 }
 
 
@@ -64,38 +77,47 @@ AGENT_REGISTRY = {
 async def classify_intent(state: MemberSession) -> dict:
     """
     Classify member query into one of the supported intents.
-    In production: structured output LLM call with few-shot examples.
-    Here: keyword heuristic so the graph runs without an API key.
+    Uses the LLM classifier when OPENAI_API_KEY is set; otherwise keyword fallback.
     """
-    # PHI scrub happens here — before the query touches any business logic
     scrub = guardrail.scrub_phi(state["current_query"])
     clean_query = scrub.scrubbed_text
 
-    query = clean_query.lower()
-
-    intent_map = [
-        (["covered", "coverage", "benefit", "deductible", "copay", "out-of-pocket"], "benefits_lookup"),
-        (["drug", "medication", "prescription", "formulary", "tier"], "formulary_lookup"),
-        (["prior auth", "prior authorization", "pa status"], "prior_auth_status"),
-        (["claim", "eob", "explanation of benefits", "denied"], "claim_status"),
-        (["speak", "human", "agent", "representative", "help me"], "escalation"),
-    ]
-
-    for keywords, intent in intent_map:
-        if any(k in query for k in keywords):
-            return {
-                "current_query": clean_query,
-                "classified_intent": intent,
-                "intent_confidence": 0.85,
-                "phi_scrubbed": scrub.was_scrubbed,
-            }
+    result = await classify_intent_llm(clean_query)
 
     return {
         "current_query": clean_query,
-        "classified_intent": "benefits_lookup",
-        "intent_confidence": 0.55,
+        "classified_intent": result.intent.value,
+        "intent_confidence": result.confidence,
         "phi_scrubbed": scrub.was_scrubbed,
     }
+
+
+async def retrieve_context(state: MemberSession) -> dict:
+    """
+    Pull tenant-scoped chunks from Qdrant after intent is known.
+    On failure (or empty results), keep any pre-seeded chunks so offline
+    tests and local demos still work.
+    """
+    intent = state.get("classified_intent") or ""
+    if intent == "escalation":
+        return {}
+
+    doc_type = INTENT_DOC_TYPE.get(intent)
+    try:
+        from rag.retriever import retrieve
+
+        chunks = await retrieve(
+            query=state["current_query"],
+            tenant_id=state["tenant_id"],
+            doc_type=doc_type,
+            top_k=5,
+        )
+    except Exception:
+        chunks = []
+
+    if chunks:
+        return {"retrieval_chunks": chunks}
+    return {}
 
 
 def route_agent(state: MemberSession) -> str:
@@ -115,9 +137,9 @@ def route_agent(state: MemberSession) -> str:
 
     intent_to_node = {
         "benefits_lookup": "benefits_node",
-        "formulary_lookup": "escalation_node",   # stub — add FormularyAgent later
-        "prior_auth_status": "escalation_node",  # stub
-        "claim_status": "escalation_node",       # stub
+        "formulary_lookup": "formulary_node",
+        "prior_auth_status": "prior_auth_node",
+        "claim_status": "claims_node",
         "escalation": "escalation_node",
     }
 
@@ -179,6 +201,18 @@ async def benefits_node(state: MemberSession) -> dict:
     return await run_agent("benefits", state)
 
 
+async def formulary_node(state: MemberSession) -> dict:
+    return await run_agent("formulary", state)
+
+
+async def claims_node(state: MemberSession) -> dict:
+    return await run_agent("claims", state)
+
+
+async def prior_auth_node(state: MemberSession) -> dict:
+    return await run_agent("prior_auth", state)
+
+
 async def escalation_node(state: MemberSession) -> dict:
     return await run_agent("escalation", state)
 
@@ -233,22 +267,33 @@ def build_graph() -> StateGraph:
     g = StateGraph(MemberSession)
 
     g.add_node("classify_intent", classify_intent)
+    g.add_node("retrieve_context", retrieve_context)
     g.add_node("benefits_node", benefits_node)
+    g.add_node("formulary_node", formulary_node)
+    g.add_node("claims_node", claims_node)
+    g.add_node("prior_auth_node", prior_auth_node)
     g.add_node("escalation_node", escalation_node)
     g.add_node("guardrail_check", guardrail_check)
 
     g.set_entry_point("classify_intent")
+    g.add_edge("classify_intent", "retrieve_context")
 
     g.add_conditional_edges(
-        "classify_intent",
+        "retrieve_context",
         route_agent,
         {
             "benefits_node": "benefits_node",
+            "formulary_node": "formulary_node",
+            "claims_node": "claims_node",
+            "prior_auth_node": "prior_auth_node",
             "escalation_node": "escalation_node",
         },
     )
 
     g.add_edge("benefits_node", "guardrail_check")
+    g.add_edge("formulary_node", "guardrail_check")
+    g.add_edge("claims_node", "guardrail_check")
+    g.add_edge("prior_auth_node", "guardrail_check")
     g.add_edge("escalation_node", "guardrail_check")
     g.add_edge("guardrail_check", END)
 

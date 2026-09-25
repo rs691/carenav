@@ -1,0 +1,8 @@
+query,expected_intent,expected_agent
+Is my MRI covered under my plan?,benefits_lookup,benefits
+I need to speak with a human representative.,escalation,escalation
+What is my deductible?,benefits_lookup,benefits
+Is my prescription covered on the formulary?,formulary_lookup,formulary
+What is the status of my prior authorization?,prior_auth_status,prior_auth
+Why was my claim denied?,claim_status,claims
+My SSN is 123-45-6789 is my MRI covered?,benefits_lookup,benefits

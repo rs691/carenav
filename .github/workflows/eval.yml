@@ -1,0 +1,67 @@
+name: Eval Harness
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * *'   # nightly 6am UTC
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python \
+            langgraph==0.2.55 langchain-openai==0.2.5 langchain==0.3.7 \
+            fastapi==0.115.4 uvicorn pydantic==2.9.2 pydantic-settings==2.6.1 \
+            python-jose cryptography qdrant-client==1.12.0 pyyaml==6.0.2 \
+            tenacity==9.0.0 structlog==24.4.0 python-dotenv==1.0.1 \
+            httpx==0.27.2 pytest==8.3.3 pytest-asyncio==0.24.0
+
+      - name: Run unit tests
+        run: |
+          source .venv/bin/activate
+          PYTHONPATH=. pytest tests/ -v --tb=short
+        env:
+          APP_ENV: development
+          OPENAI_API_KEY: ""
+          QDRANT_URL: http://localhost:6333
+          QDRANT_API_KEY: ""
+          DATABASE_URL: ""
+          JWT_SECRET: ci-secret
+
+      - name: Run eval harness
+        run: |
+          source .venv/bin/activate
+          PYTHONPATH=. python evals/runner.py --baseline evals/results/baseline.json
+        env:
+          APP_ENV: development
+          OPENAI_API_KEY: ""
+          QDRANT_URL: http://localhost:6333
+          QDRANT_API_KEY: ""
+          DATABASE_URL: ""
+          JWT_SECRET: ci-secret
+        continue-on-error: false
+
+      - name: Upload eval results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results-${{ github.run_number }}
+          path: evals/results/
+          retention-days: 30
