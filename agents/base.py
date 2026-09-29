@@ -30,6 +30,19 @@ class MemberContext:
     tone_profile: str
     prior_turns: list[dict] = field(default_factory=list)
     retrieved_chunks: list[dict] = field(default_factory=list)
+    member_profile: dict | None = None
+
+    def member_line(self) -> str:
+        """One-line member summary for prompts; empty when nothing is known."""
+        p = self.member_profile or {}
+        if not p.get("first_name"):
+            return ""
+        parts = [f"Member: {p['first_name']}"]
+        if p.get("coverage_tier"):
+            parts.append(f"coverage tier {p['coverage_tier']}")
+        if p.get("effective_date"):
+            parts.append(f"coverage effective {p['effective_date']}")
+        return ", ".join(parts) + ". Address them by first name."
 
 
 @runtime_checkable

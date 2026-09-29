@@ -70,14 +70,14 @@ class Session:
         return len(self.turns)
 
 
-_memory_sessions: dict[tuple[str, str], Session] = {}
+class SessionAccessError(Exception):
+    """The session exists but belongs to a different member."""
+
+
+_memory_sessions: dict[str, Session] = {}
 _pool = None
 _force_memory = False
 _rest_disabled = False
-
-
-def _memory_key(session_id: str, tenant_id: str) -> tuple[str, str]:
-    return (tenant_id, session_id)
 
 
 def _rest_enabled() -> bool:
@@ -110,13 +110,15 @@ async def close_pool() -> None:
 
 
 def _load_session_memory(session_id: str, tenant_id: str, member_id: str) -> Session:
-    key = _memory_key(session_id, tenant_id)
-    session = _memory_sessions.get(key)
+    session = _memory_sessions.get(session_id)
     if session is None:
         session = Session(session_id=session_id, tenant_id=tenant_id, member_id=member_id)
-        _memory_sessions[key] = session
-    elif session.member_id != member_id:
+        _memory_sessions[session_id] = session
+    elif session.member_id and session.member_id != member_id:
+        raise SessionAccessError(session_id)
+    else:
         session.member_id = member_id
+        session.tenant_id = tenant_id
     log.info(
         "session_loaded",
         session_id=session_id,
@@ -129,37 +131,40 @@ def _load_session_memory(session_id: str, tenant_id: str, member_id: str) -> Ses
 
 async def _load_session_rest(session_id: str, tenant_id: str, member_id: str) -> Session:
     async with httpx.AsyncClient(timeout=20.0) as client:
-        # Upsert session
-        upsert = await client.post(
-            _rest_url("sessions"),
-            headers={
-                **_rest_headers(),
-                "Prefer": "resolution=merge-duplicates,return=minimal",
-            },
-            params={"on_conflict": "id"},
-            json={
-                "id": session_id,
-                "tenant_id": tenant_id,
-                "member_id": member_id,
-            },
-        )
-        if upsert.status_code >= 400:
-            raise RuntimeError(f"sessions upsert failed: {upsert.status_code} {upsert.text}")
-
-        # Touch updated_at
-        await client.patch(
+        existing = await client.get(
             _rest_url("sessions"),
             headers=_rest_headers(),
-            params={"id": f"eq.{session_id}", "tenant_id": f"eq.{tenant_id}"},
-            json={"member_id": member_id},
+            params={"id": f"eq.{session_id}", "select": "member_id"},
         )
+        if existing.status_code >= 400:
+            raise RuntimeError(f"sessions fetch failed: {existing.status_code} {existing.text}")
+        rows = existing.json()
+
+        if rows and rows[0]["member_id"] != member_id:
+            raise SessionAccessError(session_id)
+
+        if rows:
+            # Same member; follow them if their plan link changed mid-conversation.
+            resp = await client.patch(
+                _rest_url("sessions"),
+                headers={**_rest_headers(), "Prefer": "return=minimal"},
+                params={"id": f"eq.{session_id}", "member_id": f"eq.{member_id}"},
+                json={"tenant_id": tenant_id, "updated_at": "now"},
+            )
+        else:
+            resp = await client.post(
+                _rest_url("sessions"),
+                headers={**_rest_headers(), "Prefer": "return=minimal"},
+                json={"id": session_id, "tenant_id": tenant_id, "member_id": member_id},
+            )
+        if resp.status_code >= 400:
+            raise RuntimeError(f"sessions write failed: {resp.status_code} {resp.text}")
 
         turns_resp = await client.get(
             _rest_url("turns"),
             headers=_rest_headers(),
             params={
                 "session_id": f"eq.{session_id}",
-                "tenant_id": f"eq.{tenant_id}",
                 "order": "created_at.asc",
                 "select": "role,content,agent_id,intent,confidence,phi_scrubbed,latency_ms,created_at",
             },
@@ -240,6 +245,8 @@ async def load_session(
     if _rest_enabled():
         try:
             return await _load_session_rest(session_id, tenant_id, member_id)
+        except SessionAccessError:
+            raise
         except Exception as e:
             log.warning("session_rest_failed", error=str(e))
             if settings.app_env != "development":
@@ -269,11 +276,10 @@ async def save_turn(
                 raise
             _rest_disabled = True
 
-    key = _memory_key(session_id, tenant_id)
-    session = _memory_sessions.get(key)
+    session = _memory_sessions.get(session_id)
     if session is None:
         session = Session(session_id=session_id, tenant_id=tenant_id, member_id="")
-        _memory_sessions[key] = session
+        _memory_sessions[session_id] = session
     session.turns.append(turn)
     log.info(
         "turn_saved",
@@ -323,9 +329,8 @@ async def get_session_summary(
         except Exception as e:
             log.warning("session_summary_rest_failed", error=str(e))
 
-    key = _memory_key(session_id, tenant_id)
-    session = _memory_sessions.get(key)
-    if not session:
+    session = _memory_sessions.get(session_id)
+    if not session or session.tenant_id != tenant_id:
         return {}
     return {
         "session_id": session.session_id,

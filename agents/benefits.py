@@ -19,7 +19,7 @@ import time
 import structlog
 
 from agents.base import AgentContract, AgentResult, Citation, MemberContext
-from core.settings import settings
+from core.llm import get_chat_llm, llm_enabled
 from prompts.registry import registry
 from rag.retriever import retrieve
 
@@ -36,7 +36,7 @@ class BenefitsAgent:
         start = time.monotonic()
 
         # ── Step 1: Retrieve relevant chunks ──────────────────────────────────
-        chunks = await retrieve(
+        chunks = ctx.retrieved_chunks or await retrieve(
             query=ctx.query,
             tenant_id=ctx.tenant_id,
             doc_type="benefits",
@@ -89,6 +89,8 @@ class BenefitsAgent:
         )
 
         user_message = f"""
+{ctx.member_line()}
+
 Conversation history:
 {history_block if history_block else "This is the first message."}
 
@@ -103,19 +105,14 @@ If the answer is not in the retrieved sections, say so clearly.
 """.strip()
 
         # ── Step 3: LLM call ───────────────────────────────────────────────────
-        if not settings.openai_api_key:
-            # No API key — return mock so tests pass offline
+        if not llm_enabled():
+            # No backend — return mock so tests pass offline
             return self._mock_result(ctx, chunks, start)
 
         try:
-            from langchain_openai import ChatOpenAI
             from langchain_core.messages import HumanMessage, SystemMessage
 
-            llm = ChatOpenAI(
-                model=settings.openai_model,
-                temperature=0,
-                api_key=settings.openai_api_key,
-            )
+            llm = get_chat_llm(temperature=0)
 
             response = await llm.ainvoke([
                 SystemMessage(content=system_prompt),
@@ -169,12 +166,12 @@ If the answer is not in the retrieved sections, say so clearly.
         chunks: list[dict],
         start: float,
     ) -> AgentResult:
-        """Offline mock — returned when OPENAI_API_KEY is not set."""
+        """Offline mock — returned when no LLM provider is configured."""
         return AgentResult(
             content=(
                 f"Based on your {ctx.plan_name} plan, here's what I found: "
                 f"[mock answer for: {ctx.query}] "
-                f"(Retrieved {len(chunks)} chunks — set OPENAI_API_KEY for real answers.)"
+                f"(Retrieved {len(chunks)} chunks — set LLM_PROVIDER=ollama or OPENAI_API_KEY for real answers.)"
             ),
             confidence=0.87,
             latency_ms=int((time.monotonic() - start) * 1000),

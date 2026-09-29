@@ -4,32 +4,22 @@ rag/retriever.py
 Hybrid retrieval for CareNav agents.
 
 Strategy:
-  1. Embed the query with text-embedding-3-small
+  1. Embed the query with the configured provider (OpenAI or Ollama)
   2. Dense vector search in the tenant's Qdrant collection
   3. Filter by doc_type if specified
   4. Staleness check — deprioritize chunks from docs older than 90 days
   5. Return top-k chunks with metadata
-
-Usage in an agent:
-    from rag.retriever import retrieve
-    chunks = await retrieve(
-        query="Is my MRI covered?",
-        tenant_id="tenant_bcbs",
-        doc_type="benefits",
-        top_k=5,
-    )
 """
 
 from __future__ import annotations
 
-import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 import structlog
-from openai import AsyncOpenAI
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 
+from core.llm import embed_query
 from core.settings import settings
 from core.tenant import get_tenant
 
@@ -37,9 +27,7 @@ log = structlog.get_logger()
 
 STALENESS_THRESHOLD_DAYS = 90
 
-# Module-level clients — initialized once
 _qdrant: QdrantClient | None = None
-_openai: AsyncOpenAI | None = None
 
 
 def _get_qdrant() -> QdrantClient:
@@ -50,22 +38,6 @@ def _get_qdrant() -> QdrantClient:
             api_key=settings.qdrant_api_key if settings.qdrant_api_key else None,
         )
     return _qdrant
-
-
-def _get_openai() -> AsyncOpenAI:
-    global _openai
-    if _openai is None:
-        _openai = AsyncOpenAI(api_key=settings.openai_api_key)
-    return _openai
-
-
-async def _embed(text: str) -> list[float]:
-    client = _get_openai()
-    response = await client.embeddings.create(
-        model=settings.openai_embedding_model,
-        input=text,
-    )
-    return response.data[0].embedding
 
 
 def _is_stale(effective_date_str: str) -> bool:
@@ -88,27 +60,16 @@ async def retrieve(
 ) -> list[dict]:
     """
     Retrieve the top-k most relevant chunks for a query.
-
-    Args:
-        query:     Member's question (already PHI-scrubbed by guardrail layer)
-        tenant_id: Scopes retrieval to this tenant's collection
-        doc_type:  Optional filter — "benefits" | "formulary" | "policy"
-        top_k:     Number of chunks to return
-
-    Returns:
-        List of chunk dicts with text, metadata, score, and staleness flag.
     """
     tenant = get_tenant(tenant_id)
     collection = tenant.rag_namespace
 
-    # Embed the query
     try:
-        query_vector = await _embed(query)
+        query_vector = await embed_query(query)
     except Exception as e:
         log.error("embedding_failed", error=str(e), tenant_id=tenant_id)
         return []
 
-    # Build optional doc_type filter
     query_filter = None
     if doc_type:
         query_filter = Filter(
@@ -120,16 +81,17 @@ async def retrieve(
             ]
         )
 
-    # Dense vector search
     try:
         qdrant = _get_qdrant()
-        results = qdrant.search(
+        response = qdrant.query_points(
             collection_name=collection,
-            query_vector=("dense", query_vector),
+            query=query_vector,
+            using="dense",
             query_filter=query_filter,
             limit=top_k,
             with_payload=True,
         )
+        results = response.points
     except Exception as e:
         log.error(
             "qdrant_search_failed",

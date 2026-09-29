@@ -1,0 +1,34 @@
+Acme Corp Benefits — 2026 Summary Plan Description (Excerpt)
+Effective Date: September 1, 2026
+Plan Name: Acme Corp Benefits
+
+SECTION 1 DEDUCTIBLE
+Section 1.1 Plan Deductible
+Individual in-network deductible: $1,000.
+Family in-network deductible: $2,000.
+Out-of-network deductible: $2,000 individual / $4,000 family.
+
+SECTION 2 OUTPATIENT SERVICES
+Section 2.1 Diagnostic Imaging Including MRI
+Outpatient MRI is covered when medically necessary.
+In-network: after deductible, plan pays 90% (you pay 10% coinsurance).
+Prior authorization is required for non-emergency MRI.
+
+Section 2.2 Office Visits
+Primary care in-network copay: $25.
+Specialist in-network copay: $50.
+
+SECTION 3 HOSPITAL
+Section 3.1 Inpatient
+In-network inpatient: after deductible, plan pays 90%.
+Elective admissions require prior authorization.
+
+SECTION 4 PRESCRIPTION DRUGS
+Section 4.1 Pharmacy
+Acme uses a three-tier formulary administered by the pharmacy benefit manager.
+Mail order is available for 90-day maintenance fills.
+
+SECTION 5 CLAIMS
+Section 5.1 Filing and Status
+In-network providers bill the plan. Claim statuses include Received, Processed, Paid, and Denied.
+Appeals must be filed within 180 days of a denial.

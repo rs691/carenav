@@ -16,6 +16,7 @@ settings_mod.settings = settings_mod.Settings.model_construct(
     supabase_url="",
     supabase_service_key="",
     supabase_service_role_key="",
+    llm_provider="openai",
     openai_api_key="",
     app_env="development",
     cors_origins="http://localhost:3000",
@@ -75,8 +76,7 @@ async def test_chat_in_memory_session():
     with (
         patch("rag.retriever.retrieve", new=AsyncMock(return_value=chunks)),
         patch("agents.benefits.retrieve", new=AsyncMock(return_value=chunks)),
-        patch("agents.benefits.settings", settings_mod.settings),
-        patch("orchestrator.classifier.settings", settings_mod.settings),
+        patch("core.llm.settings", settings_mod.settings),
     ):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/chat", json=body, headers=headers)
@@ -87,3 +87,102 @@ async def test_chat_in_memory_session():
     assert data["intent"] == "benefits_lookup"
     assert data["reply"]
     assert data["turn_count"] >= 2
+
+
+def _token(
+    app_metadata: dict | None = None,
+    user_metadata: dict | None = None,
+    sub: str = "user-123",
+) -> str:
+    from jose import jwt
+
+    return jwt.encode(
+        {
+            "sub": sub,
+            "email": "jordan@example.com",
+            "aud": "authenticated",
+            "app_metadata": app_metadata or {},
+            "user_metadata": user_metadata or {},
+        },
+        "test",
+        algorithm="HS256",
+    )
+
+
+async def _post_chat(token: str, message: str = "What is my deductible?"):
+    transport = ASGITransport(app=app)
+    with (
+        patch("middleware.auth.settings", settings_mod.settings),
+        patch("core.llm.settings", settings_mod.settings),
+        patch("rag.retriever.retrieve", new=AsyncMock(return_value=[])),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.post(
+                "/chat",
+                json={"session_id": "sess_identity", "message": message},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+
+@pytest.mark.asyncio
+async def test_unlinked_user_gets_general_agent():
+    resp = await _post_chat(_token(user_metadata={"full_name": "Jordan Rivera"}))
+    assert resp.status_code == 200
+    assert resp.json()["agent_used"] == "general"
+
+
+@pytest.mark.asyncio
+async def test_user_metadata_tenant_is_not_trusted():
+    resp = await _post_chat(_token(user_metadata={"tenant_id": "tenant_bcbs"}))
+    assert resp.status_code == 200
+    assert resp.json()["agent_used"] == "general"
+
+
+@pytest.mark.asyncio
+async def test_unlinked_user_can_still_escalate():
+    resp = await _post_chat(_token(), "I need to speak with a human representative")
+    assert resp.json()["agent_used"] == "escalation"
+
+
+@pytest.mark.asyncio
+async def test_me_reports_link_and_name():
+    transport = ASGITransport(app=app)
+    token = _token(
+        app_metadata={"tenant_id": "tenant_bcbs", "onboarded": True},
+        user_metadata={"full_name": "Jordan Rivera"},
+    )
+    with patch("middleware.auth.settings", settings_mod.settings):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/me", headers={"Authorization": f"Bearer {token}"})
+    data = resp.json()
+    assert resp.status_code == 200
+    assert data["linked"] is True
+    assert data["onboarded"] is True
+    assert data["plan_name"] == "BlueCross Premier PPO"
+    assert data["first_name"] == "Jordan"
+
+
+@pytest.mark.asyncio
+async def test_other_member_cannot_use_someone_elses_session():
+    first = await _post_chat(_token(sub="member-a"), "What is a deductible?")
+    assert first.status_code == 200
+    second = await _post_chat(_token(sub="member-b"), "What did I ask before?")
+    assert second.status_code == 403
+    assert session_mod._memory_sessions["sess_identity"].member_id == "member-a"
+
+
+@pytest.mark.asyncio
+async def test_history_survives_linking_a_plan():
+    await _post_chat(_token(sub="member-a"), "What is a deductible?")
+    linked = _token(sub="member-a", app_metadata={"tenant_id": "tenant_bcbs", "onboarded": True})
+    resp = await _post_chat(linked, "Is my MRI covered?")
+    assert resp.status_code == 200
+    assert resp.json()["turn_count"] == 4
+
+
+@pytest.mark.asyncio
+async def test_me_requires_sign_in():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/me", headers={"x-tenant-id": "tenant_bcbs"})
+    assert resp.status_code == 401

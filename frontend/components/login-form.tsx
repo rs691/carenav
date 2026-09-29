@@ -47,14 +47,11 @@ export function LoginForm({
         throw new Error("Supabase env not configured")
       }
       const supabase = createClient()
-      const { data, error: err } = await supabase.auth.signInWithPassword({
+      const { error: err } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
       if (err) throw err
-      if (data.session?.access_token) {
-        sessionStorage.setItem("carenav_access_token", data.session.access_token)
-      }
       router.push(next)
       router.refresh()
     } catch (err) {

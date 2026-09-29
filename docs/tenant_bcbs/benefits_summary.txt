@@ -1,0 +1,63 @@
+BlueCross Premier PPO — 2026 Member Benefits Summary
+Effective Date: September 1, 2026
+Plan Name: BlueCross Premier PPO
+
+SECTION 1 DEDUCTIBLE AND OUT-OF-POCKET
+Section 1.1 Individual Deductible
+Your annual individual deductible is $1,500 for in-network providers and $3,000 for out-of-network providers.
+Family deductible is $3,000 in-network and $6,000 out-of-network.
+The deductible resets each calendar year on January 1.
+
+Section 1.2 Out-of-Pocket Maximum
+In-network out-of-pocket maximum is $6,000 individual / $12,000 family.
+Once you reach the out-of-pocket maximum, covered in-network services are paid at 100% for the rest of the year.
+
+SECTION 2 OUTPATIENT SERVICES
+Section 2.1 Diagnostic Imaging Including MRI
+Outpatient MRI, CT, and PET scans are covered when medically necessary and ordered by a licensed provider.
+In-network outpatient MRI: after deductible, plan pays 80% and you pay 20% coinsurance.
+Out-of-network outpatient MRI: after deductible, plan pays 60% and you pay 40% coinsurance.
+Prior authorization is required for non-emergency outpatient MRI and CT scans.
+Emergency department imaging does not require prior authorization.
+
+Section 2.2 Laboratory and Pathology
+In-network lab work at preferred labs is covered at 100% after deductible.
+Office-based labs may apply a $25 copay.
+
+Section 2.3 Physical Therapy
+Physical therapy is covered for up to 30 visits per calendar year.
+In-network copay is $40 per visit after deductible.
+
+SECTION 3 HOSPITAL AND SURGERY
+Section 3.1 Inpatient Hospital
+In-network inpatient hospital stays: after deductible, plan pays 80%.
+Prior authorization is required for elective inpatient admissions.
+Emergency admissions must be reported within 48 hours.
+
+Section 3.2 Outpatient Surgery
+Ambulatory surgery centers that are in-network: after deductible, plan pays 80%.
+Facility fees and surgeon fees may bill separately.
+
+SECTION 4 PREVENTIVE CARE
+Section 4.1 Preventive Services
+Annual wellness visits, recommended immunizations, and USPSTF grade A/B preventive screenings are covered at 100% in-network with no deductible.
+
+SECTION 5 PRESCRIPTION DRUGS
+Section 5.1 Pharmacy Benefit Overview
+Retail pharmacy benefits are administered under the plan formulary.
+Tier 1 generics: $10 copay (30-day supply)
+Tier 2 preferred brand: $40 copay
+Tier 3 non-preferred brand: $70 copay
+Tier 4 specialty: 20% coinsurance up to $250 per fill
+Mail-order 90-day supplies are available for maintenance medications at 2.5x the retail copay.
+
+SECTION 6 MENTAL HEALTH
+Section 6.1 Behavioral Health
+Outpatient mental health visits with in-network providers: $30 copay, deductible waived for the first 8 visits each year.
+Inpatient mental health follows the inpatient hospital cost share and requires prior authorization for non-emergency stays.
+
+SECTION 7 CLAIMS AND APPEALS
+Section 7.1 Filing a Claim
+In-network providers typically bill the plan directly.
+If you receive a bill, submit a claim within 12 months of the date of service with itemized charges and the provider NPI.
+Denied claims may be appealed within 180 days of the denial notice.

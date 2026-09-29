@@ -1,0 +1,14 @@
+Acme Corp Benefits — Claims and Prior Authorization Policy
+Effective Date: September 1, 2026
+
+SECTION 1 PRIOR AUTHORIZATION
+Section 1.1 Scope
+Prior authorization is required for non-emergency MRI, elective inpatient care, and medications flagged PA Required on the formulary.
+
+Section 1.2 Status
+Members may check PA status with the authorization number. Typical statuses: Pending Review, Approved, Denied.
+
+SECTION 2 CLAIMS
+Section 2.1 Denials and Appeals
+Common denial reasons include missing PA, out-of-network without exception, and timely filing limits.
+Appeals are accepted for 180 days after the denial notice.

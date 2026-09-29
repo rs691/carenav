@@ -1,0 +1,11 @@
+Drug Name,Tier,Prior Auth Required,Quantity Limit,Notes
+Metformin,1,No,90 / 30 days,Generic preferred
+Lisinopril,1,No,30 / 30 days,Blood pressure
+Atorvastatin,1,No,30 / 30 days,Cholesterol
+Ozempic,3,Yes,1 pen / 28 days,PA required for type 2 diabetes
+Albuterol Inhaler,2,No,2 / 30 days,Rescue
+Sertraline,1,No,30 / 30 days,Mental health
+Eliquis,2,Yes,60 / 30 days,Anticoagulant PA for chronic use
+Amoxicillin,1,No,None,Infection
+Omeprazole,1,No,30 / 30 days,Acid reflux
+Insulin Glargine,2,No,2 vials / 30 days,Basal insulin

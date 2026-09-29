@@ -45,6 +45,19 @@ TENANT_REGISTRY: dict[str, TenantConfig] = {
 }
 
 
+# Signed-in users who aren't linked to a plan. No plan documents, so no RAG;
+# the general agent answers in plan-agnostic terms.
+GENERAL_TENANT = TenantConfig(
+    tenant_id="general",
+    plan_name="No plan linked",
+    rag_namespace="",
+    formulary_version="",
+    enabled_agents=["general", "escalation"],
+    tone_profile="empathetic_plain",
+    sso_provider="",
+)
+
+
 def get_tenant(tenant_id: str) -> TenantConfig:
     config = TENANT_REGISTRY.get(tenant_id)
     if not config:

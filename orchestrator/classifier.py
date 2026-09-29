@@ -22,7 +22,7 @@ from enum import Enum
 
 import structlog
 
-from core.settings import settings
+from core.llm import get_chat_llm, llm_enabled
 
 log = structlog.get_logger()
 
@@ -84,11 +84,10 @@ async def classify_intent_llm(query: str) -> IntentResult:
     LLM-powered intent classification with structured JSON output.
     Falls back to keyword heuristic on any failure.
     """
-    if not settings.openai_api_key:
+    if not llm_enabled():
         return _keyword_fallback(query)
 
     import json
-    from langchain_openai import ChatOpenAI
     from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
     messages = [SystemMessage(content=SYSTEM_PROMPT)]
@@ -101,11 +100,7 @@ async def classify_intent_llm(query: str) -> IntentResult:
     messages.append(HumanMessage(content=query))
 
     try:
-        llm = ChatOpenAI(
-            model=settings.openai_model,
-            temperature=0,
-            api_key=settings.openai_api_key,
-        )
+        llm = get_chat_llm(temperature=0)
         response = await llm.ainvoke(messages)
         raw = response.content.strip()
 

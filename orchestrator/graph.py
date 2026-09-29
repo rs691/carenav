@@ -15,6 +15,7 @@ import asyncio
 import time
 from typing import Annotated, TypedDict
 
+import structlog
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 
@@ -23,9 +24,14 @@ from agents.benefits import BenefitsAgent
 from agents.claims import ClaimsAgent
 from agents.escalation import EscalationAgent
 from agents.formulary import FormularyAgent
+from agents.general import GeneralAgent
 from agents.prior_auth import PriorAuthAgent
+from core.llm import agent_timeout_seconds
+from core.tenant import GENERAL_TENANT
 from middleware.guardrails import guardrail
 from orchestrator.classifier import classify_intent_llm
+
+log = structlog.get_logger()
 
 # ---------------------------------------------------------------------------
 # State schema
@@ -48,6 +54,7 @@ class MemberSession(TypedDict):
     failure_streak: int             # circuit breaker counter
     phi_scrubbed: bool              # set by guardrail, read by API layer
     tone_pass: bool                 # set by guardrail, read by API layer
+    member_profile: dict | None     # roster profile (or just a name) for personalization
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +67,7 @@ AGENT_REGISTRY = {
     "claims": ClaimsAgent(),
     "prior_auth": PriorAuthAgent(),
     "escalation": EscalationAgent(),
+    "general": GeneralAgent(),
 }
 
 INTENT_DOC_TYPE = {
@@ -98,9 +106,11 @@ async def retrieve_context(state: MemberSession) -> dict:
     On failure (or empty results), keep any pre-seeded chunks so offline
     tests and local demos still work.
     """
+    # LangGraph 0.2.x rejects empty updates, so always echo retrieval_chunks.
+    existing = state.get("retrieval_chunks", [])
     intent = state.get("classified_intent") or ""
-    if intent == "escalation":
-        return {}
+    if intent == "escalation" or state["tenant_id"] == GENERAL_TENANT.tenant_id:
+        return {"retrieval_chunks": existing}
 
     doc_type = INTENT_DOC_TYPE.get(intent)
     try:
@@ -115,9 +125,7 @@ async def retrieve_context(state: MemberSession) -> dict:
     except Exception:
         chunks = []
 
-    if chunks:
-        return {"retrieval_chunks": chunks}
-    return {}
+    return {"retrieval_chunks": chunks or existing}
 
 
 def route_agent(state: MemberSession) -> str:
@@ -130,6 +138,10 @@ def route_agent(state: MemberSession) -> str:
     # Circuit breaker: if 3 consecutive failures, force escalation
     if streak >= 3:
         return "escalation_node"
+
+    # Unlinked members: general guidance unless they ask for a person
+    if state["tenant_id"] == GENERAL_TENANT.tenant_id:
+        return "escalation_node" if intent == "escalation" else "general_node"
 
     # Low confidence: escalate rather than guess
     if confidence < 0.6:
@@ -172,16 +184,21 @@ async def run_agent(agent_id: str, state: MemberSession) -> dict:
         tone_profile=state["tone_profile"],
         prior_turns=state.get("messages", []),
         retrieved_chunks=state.get("retrieval_chunks", []),
+        member_profile=state.get("member_profile"),
     )
 
     try:
         result = await asyncio.wait_for(
             agent.run(ctx),
-            timeout=agent.latency_sla_ms / 1000,
+            timeout=agent_timeout_seconds(agent.latency_sla_ms),
         )
     except asyncio.TimeoutError:
+        log.warning("agent_timeout", agent=agent_id, sla_ms=agent.latency_sla_ms)
         result = AgentResult(
-            content="",
+            content=(
+                "That took longer than expected to look up. Please try asking again, "
+                "or I can connect you with a benefits specialist."
+            ),
             confidence=0.0,
             latency_ms=agent.latency_sla_ms,
             fallback=True,
@@ -215,6 +232,10 @@ async def prior_auth_node(state: MemberSession) -> dict:
 
 async def escalation_node(state: MemberSession) -> dict:
     return await run_agent("escalation", state)
+
+
+async def general_node(state: MemberSession) -> dict:
+    return await run_agent("general", state)
 
 
 async def guardrail_check(state: MemberSession) -> dict:
@@ -273,6 +294,7 @@ def build_graph() -> StateGraph:
     g.add_node("claims_node", claims_node)
     g.add_node("prior_auth_node", prior_auth_node)
     g.add_node("escalation_node", escalation_node)
+    g.add_node("general_node", general_node)
     g.add_node("guardrail_check", guardrail_check)
 
     g.set_entry_point("classify_intent")
@@ -287,6 +309,7 @@ def build_graph() -> StateGraph:
             "claims_node": "claims_node",
             "prior_auth_node": "prior_auth_node",
             "escalation_node": "escalation_node",
+            "general_node": "general_node",
         },
     )
 
@@ -295,6 +318,7 @@ def build_graph() -> StateGraph:
     g.add_edge("claims_node", "guardrail_check")
     g.add_edge("prior_auth_node", "guardrail_check")
     g.add_edge("escalation_node", "guardrail_check")
+    g.add_edge("general_node", "guardrail_check")
     g.add_edge("guardrail_check", END)
 
     return g.compile()

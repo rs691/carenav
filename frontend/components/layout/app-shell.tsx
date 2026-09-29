@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/sidebar"
 import { ModeToggle } from "@/components/mode-toggle"
 
-const AUTH_PREFIXES = ["/login", "/signup", "/auth"]
+const AUTH_PREFIXES = ["/login", "/signup", "/auth", "/welcome"]
 
 function isAuthRoute(pathname: string | null) {
   if (!pathname) return false

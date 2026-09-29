@@ -1,6 +1,13 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
+// Set once a browser has signed in, so returning visitors land on sign-in
+// instead of sign-up.
+const HAS_ACCOUNT_COOKIE = "carenav_has_account"
+
+const AUTH_PAGES = ["/login", "/signup"]
+const WELCOME_PAGE = "/welcome"
+
 function isValidSupabaseUrl(url: string | undefined): url is string {
   if (!url) return false
   if (url.includes("<") || url.includes(">")) return false
@@ -12,14 +19,39 @@ function isValidSupabaseUrl(url: string | undefined): url is string {
   }
 }
 
+function matches(path: string, prefix: string) {
+  return path === prefix || path.startsWith(`${prefix}/`)
+}
+
+function redirectTo(
+  request: NextRequest,
+  pathname: string,
+  from: NextResponse,
+  next?: string,
+) {
+  const url = request.nextUrl.clone()
+  url.pathname = pathname
+  url.search = ""
+  if (next && next !== "/") url.searchParams.set("next", next)
+  const response = NextResponse.redirect(url)
+  // Keep any refreshed auth cookies from the Supabase client.
+  from.cookies.getAll().forEach((cookie) => response.cookies.set(cookie))
+  return response
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
+  const path = request.nextUrl.pathname
+  const onAuthPage = AUTH_PAGES.some((p) => matches(path, p))
+  const onCallback = matches(path, "/auth")
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  // Skip auth client when .env.local still has placeholders like https://<project>.supabase.co
   if (!isValidSupabaseUrl(url) || !key || key.length < 20) {
-    return supabaseResponse
+    // Without Supabase nobody can sign in; the login page reports the config error.
+    return onAuthPage || onCallback
+      ? supabaseResponse
+      : redirectTo(request, "/login", supabaseResponse)
   }
 
   const supabase = createServerClient(url, key, {
@@ -41,19 +73,35 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const path = request.nextUrl.pathname
-  const isPublic =
-    path.startsWith("/login") ||
-    path.startsWith("/auth") ||
-    path.startsWith("/_next") ||
-    path === "/favicon.ico"
+  if (onCallback) return supabaseResponse
 
-  const authRequired = process.env.NEXT_PUBLIC_AUTH_REQUIRED === "true"
-  if (authRequired && !user && !isPublic) {
-    const redirect = request.nextUrl.clone()
-    redirect.pathname = "/login"
-    redirect.searchParams.set("next", path)
-    return NextResponse.redirect(redirect)
+  if (!user) {
+    if (onAuthPage) return supabaseResponse
+    const returning = request.cookies.has(HAS_ACCOUNT_COOKIE)
+    return redirectTo(
+      request,
+      returning ? "/login" : "/signup",
+      supabaseResponse,
+      path + request.nextUrl.search,
+    )
+  }
+
+  supabaseResponse.cookies.set(HAS_ACCOUNT_COOKIE, "1", {
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+    sameSite: "lax",
+  })
+
+  const onboarded = Boolean(
+    (user.app_metadata as { onboarded?: boolean } | undefined)?.onboarded,
+  )
+  const onWelcome = matches(path, WELCOME_PAGE)
+
+  if (!onboarded && !onWelcome) {
+    return redirectTo(request, WELCOME_PAGE, supabaseResponse)
+  }
+  if (onboarded && (onAuthPage || onWelcome)) {
+    return redirectTo(request, "/", supabaseResponse)
   }
 
   return supabaseResponse

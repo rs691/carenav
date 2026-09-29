@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import { GalleryVerticalEndIcon } from "lucide-react"
 import { SignupForm } from "@/components/signup-form"
 import { ModeToggle } from "@/components/mode-toggle"
@@ -12,15 +11,12 @@ export default function SignupPage() {
         <ModeToggle />
       </div>
       <div className="flex w-full max-w-sm flex-col gap-6">
-        <Link
-          href="/"
-          className="flex items-center gap-2 self-center font-medium"
-        >
+        <div className="flex items-center gap-2 self-center font-medium">
           <div className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <GalleryVerticalEndIcon className="size-4" />
           </div>
           CareNav
-        </Link>
+        </div>
         <SignupForm />
       </div>
     </div>

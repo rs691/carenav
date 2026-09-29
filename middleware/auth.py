@@ -10,7 +10,7 @@ from jose import JWTError, jwk, jwt
 from jose.exceptions import JWKError
 
 from core.settings import settings
-from core.tenant import TenantConfig, get_tenant
+from core.tenant import GENERAL_TENANT, TenantConfig, get_tenant
 
 # Cache JWKS briefly so we don't hit Discovery on every request
 _jwks_cache: dict | None = None
@@ -23,16 +23,20 @@ class AuthContext:
     member_id: str
     tenant: TenantConfig
     via: str  # "jwt" | "header"
+    email: str | None = None
+    full_name: str | None = None
+    member_record_id: str | None = None
+    onboarded: bool = False
+
+    @property
+    def linked(self) -> bool:
+        return self.tenant.tenant_id != GENERAL_TENANT.tenant_id
 
 
 def _tenant_from_claims(payload: dict) -> str | None:
+    # Only app_metadata: users can edit their own user_metadata.
     app_meta = payload.get("app_metadata") or {}
-    user_meta = payload.get("user_metadata") or {}
-    return (
-        app_meta.get("tenant_id")
-        or user_meta.get("tenant_id")
-        or payload.get("tenant_id")
-    )
+    return app_meta.get("tenant_id") or None
 
 
 def _jwks_url() -> str:
@@ -126,8 +130,9 @@ async def resolve_auth(
     x_tenant_id: str | None = Header(default=None),
 ) -> AuthContext:
     """
-    Prefer Bearer JWT (production).
-    In development, allow x-tenant-id without a token for local UI testing.
+    Prefer Bearer JWT (production). Users without a plan link get the
+    general tenant. In development, allow x-tenant-id without a token for
+    local API testing.
     """
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
@@ -136,18 +141,23 @@ async def resolve_auth(
         if not member_id:
             raise HTTPException(status_code=401, detail="Token missing subject")
 
-        claim_tenant = _tenant_from_claims(payload) or x_tenant_id
-        if not claim_tenant:
-            raise HTTPException(
-                status_code=401,
-                detail="No tenant_id in token app_metadata; set it or pass x-tenant-id",
-            )
+        claim_tenant = _tenant_from_claims(payload)
         try:
-            tenant = get_tenant(claim_tenant)
-        except ValueError as e:
-            raise HTTPException(status_code=401, detail=str(e)) from e
+            tenant = get_tenant(claim_tenant) if claim_tenant else GENERAL_TENANT
+        except ValueError:
+            tenant = GENERAL_TENANT
 
-        return AuthContext(member_id=member_id, tenant=tenant, via="jwt")
+        app_meta = payload.get("app_metadata") or {}
+        user_meta = payload.get("user_metadata") or {}
+        return AuthContext(
+            member_id=member_id,
+            tenant=tenant,
+            via="jwt",
+            email=payload.get("email"),
+            full_name=user_meta.get("full_name"),
+            member_record_id=app_meta.get("member_record_id"),
+            onboarded=bool(app_meta.get("onboarded")),
+        )
 
     if settings.app_env == "development" and x_tenant_id:
         try:
@@ -160,3 +170,12 @@ async def resolve_auth(
         status_code=401,
         detail="Authorization Bearer token required (or x-tenant-id in development)",
     )
+
+
+async def require_user(
+    authorization: str | None = Header(default=None),
+) -> AuthContext:
+    """Signed-in Supabase user only (no dev header); used by /me endpoints."""
+    if not (authorization and authorization.lower().startswith("bearer ")):
+        raise HTTPException(status_code=401, detail="Sign in required")
+    return await resolve_auth(authorization=authorization, x_tenant_id=None)

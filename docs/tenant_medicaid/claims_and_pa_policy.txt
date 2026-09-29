@@ -1,0 +1,15 @@
+Illinois Medicaid — Prior Authorization Guidance
+Effective Date: September 1, 2026
+
+SECTION 1 PRIOR AUTHORIZATION
+Section 1.1 Required Services
+Prior authorization is required for non-emergency MRI/CT, elective inpatient admissions, and non-preferred formulary drugs marked PA Required.
+
+Section 1.2 Status Check
+PA statuses: Pending, Approved, Denied, Additional Information Needed.
+Standard decisions are typically issued within 3 business days.
+
+SECTION 2 CLAIMS
+Section 2.1 Claim Status
+Enrolled providers bill Medicaid directly. Members rarely file paper claims.
+If a service is denied, ask the provider for the denial reason code and appeal rights.

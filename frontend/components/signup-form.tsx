@@ -58,15 +58,14 @@ export function SignupForm({
         email,
         password,
         options: {
-          data: { full_name: name },
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/`,
+          data: { full_name: name.trim() },
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/welcome`,
         },
       })
       if (err) throw err
 
-      if (data.session?.access_token) {
-        sessionStorage.setItem("carenav_access_token", data.session.access_token)
-        router.push("/")
+      if (data.session) {
+        router.push("/welcome")
         router.refresh()
         return
       }
@@ -85,7 +84,8 @@ export function SignupForm({
         <CardHeader className="text-center">
           <CardTitle className="text-xl">Create your account</CardTitle>
           <CardDescription>
-            Enter your email below to create your CareNav account
+            New to CareNav? Create your account, then we&apos;ll match you to
+            your health plan.
           </CardDescription>
         </CardHeader>
         <CardContent>

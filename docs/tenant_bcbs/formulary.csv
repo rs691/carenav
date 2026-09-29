@@ -1,0 +1,21 @@
+Drug Name,Tier,Prior Auth Required,Quantity Limit,Notes
+Metformin,1,No,90 tablets / 30 days,Preferred first-line diabetes therapy
+Lisinopril,1,No,30 tablets / 30 days,ACE inhibitor for hypertension
+Atorvastatin,1,No,30 tablets / 30 days,High-intensity statin
+Sertraline,1,No,30 tablets / 30 days,SSRI antidepressant
+Amoxicillin,1,No,None,Standard antibiotic
+Omeprazole,1,No,30 capsules / 30 days,PPI for GERD
+Amlodipine,1,No,30 tablets / 30 days,Calcium channel blocker
+Levothyroxine,1,No,30 tablets / 30 days,Thyroid replacement
+Ibuprofen,1,No,None,OTC equivalent preferred when available
+Albuterol Inhaler,2,No,2 inhalers / 30 days,Rescue inhaler
+Escitalopram,2,No,30 tablets / 30 days,Preferred brand SSRI alternative
+Ozempic,3,Yes,1 pen / 28 days,GLP-1 for type 2 diabetes; PA required; obesity-only use not covered
+Mounjaro,3,Yes,1 pen / 28 days,GLP-1/GIP; PA required with documented A1c criteria
+Humira,4,Yes,2 pens / 28 days,Specialty biologic; specialty pharmacy required
+Enbrel,4,Yes,4 syringes / 28 days,Specialty biologic
+Spiriva,2,No,1 inhaler / 30 days,COPD maintenance
+Advair Diskus,2,No,1 inhaler / 30 days,Asthma/COPD controller
+Eliquis,2,Yes,60 tablets / 30 days,Anticoagulant; PA for new starts beyond 7 days
+Jardiance,2,Yes,30 tablets / 30 days,SGLT2; PA if used with GLP-1 dual therapy
+Insulin Glargine,2,No,2 vials / 30 days,Basal insulin preferred product

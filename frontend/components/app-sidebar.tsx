@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { GalleryVerticalEndIcon, MessageSquarePlusIcon } from "lucide-react"
 import { createChatId } from "@/lib/session"
 import { createClient } from "@/lib/supabase/client"
+import { useMe } from "@/lib/use-me"
 import { SearchForm } from "@/components/search-form"
 import {
   Sidebar,
@@ -29,19 +30,7 @@ const DEFAULT_WORKSPACE = "default"
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const router = useRouter()
   const pathname = usePathname()
-  const [signedIn, setSignedIn] = React.useState(false)
-
-  React.useEffect(() => {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return
-    const supabase = createClient()
-    supabase.auth.getSession().then(({ data }) => {
-      setSignedIn(!!data.session)
-    })
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      setSignedIn(!!session)
-    })
-    return () => sub.subscription.unsubscribe()
-  }, [])
+  const { me } = useMe()
 
   function newChat() {
     const id = createChatId()
@@ -49,10 +38,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }
 
   async function signOut() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    sessionStorage.removeItem("carenav_access_token")
-    router.push("/login")
+    await createClient().auth.signOut()
+    router.replace("/login")
     router.refresh()
   }
 
@@ -114,24 +101,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                {signedIn ? (
-                  <SidebarMenuButton onClick={signOut}>
-                    Sign out
-                  </SidebarMenuButton>
-                ) : (
-                  <SidebarMenuButton
-                    isActive={pathname === "/login"}
-                    render={<Link href="/login" />}
-                  >
-                    Sign in
-                  </SidebarMenuButton>
-                )}
+                <SidebarMenuButton onClick={signOut}>Sign out</SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
+        {me && (
+          <Link
+            href="/settings"
+            className="flex flex-col gap-0.5 rounded-md px-2 py-1.5 text-sm hover:bg-sidebar-accent"
+          >
+            <span className="truncate font-medium">{me.full_name || me.email}</span>
+            <span className="truncate text-xs text-muted-foreground">
+              {me.plan_name ?? "No plan linked"}
+            </span>
+          </Link>
+        )}
         <div className="flex items-center justify-between gap-2 px-2 pb-2">
           <Button variant="outline" size="sm" onClick={newChat} className="flex-1">
             New chat

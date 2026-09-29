@@ -8,7 +8,7 @@ import time
 import structlog
 
 from agents.base import AgentResult, Citation, MemberContext
-from core.settings import settings
+from core.llm import get_chat_llm, llm_enabled
 from prompts.registry import registry
 from rag.retriever import retrieve
 
@@ -68,17 +68,18 @@ class RagLookupAgent:
             )
 
         user_message = (
+            f"{ctx.member_line()}\n\n"
             f"Retrieved sections:\n{context_block}\n\n"
             f"Member question: {ctx.query}\n\n"
             "Answer using only the retrieved sections. Cite sources."
         )
 
-        if not settings.openai_api_key:
+        if not llm_enabled():
             return AgentResult(
                 content=(
                     f"Based on your {ctx.plan_name} plan ({self.agent_id}): "
                     f"[mock for: {ctx.query}] "
-                    f"(Retrieved {len(chunks)} chunks — set OPENAI_API_KEY for live answers.)"
+                    f"(Retrieved {len(chunks)} chunks — set LLM_PROVIDER=ollama or OPENAI_API_KEY for live answers.)"
                 ),
                 confidence=0.85,
                 latency_ms=int((time.monotonic() - start) * 1000),
@@ -94,13 +95,8 @@ class RagLookupAgent:
 
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
-            from langchain_openai import ChatOpenAI
 
-            llm = ChatOpenAI(
-                model=settings.openai_model,
-                temperature=0,
-                api_key=settings.openai_api_key,
-            )
+            llm = get_chat_llm(temperature=0)
             response = await llm.ainvoke(
                 [
                     SystemMessage(content=system_prompt),

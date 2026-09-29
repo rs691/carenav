@@ -107,3 +107,24 @@ async def test_prior_turns_carried_into_state():
     # Prior turns injected — agent had context of prior exchange
     assert result["active_agent"] == "benefits"
     assert len(result["messages"]) > 0
+
+
+# ── SLA timeout ───────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_agent_timeout_returns_fallback_message_not_empty():
+    import asyncio
+    from orchestrator.graph import AGENT_REGISTRY, run_agent
+
+    async def too_slow(ctx):
+        await asyncio.sleep(1)
+
+    agent = AGENT_REGISTRY["benefits"]
+    with patch.object(agent, "run", new=too_slow), \
+         patch("orchestrator.graph.agent_timeout_seconds", return_value=0.01):
+        update = await run_agent("benefits", make_session("What is my deductible?"))
+
+    result = update["agent_result"]
+    assert result.fallback is True
+    assert result.content.strip()
+    assert update["failure_streak"] == 1

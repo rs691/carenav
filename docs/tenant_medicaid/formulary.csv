@@ -1,0 +1,11 @@
+Drug Name,Tier,Prior Auth Required,Quantity Limit,Notes
+Metformin,Preferred,No,90 / 30 days,First-line diabetes
+Lisinopril,Preferred,No,30 / 30 days,Hypertension
+Amoxicillin,Preferred,No,None,Antibiotic
+Albuterol Inhaler,Preferred,No,2 / 30 days,Rescue inhaler
+Sertraline,Preferred,No,30 / 30 days,Depression/anxiety
+Ozempic,Non-Preferred,Yes,1 pen / 28 days,PA with diabetes criteria; weight-loss-only not covered
+Insulin Glargine,Preferred,No,2 vials / 30 days,Basal insulin
+Omeprazole,Preferred,No,30 / 30 days,GERD
+Ibuprofen,Preferred,No,None,Pain/inflammation
+Levothyroxine,Preferred,No,30 / 30 days,Thyroid

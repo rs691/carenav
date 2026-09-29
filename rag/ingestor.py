@@ -16,11 +16,11 @@ Chunking strategy:
 Usage:
     python rag/ingestor.py --tenant tenant_bcbs --file path/to/doc.pdf --type benefits
     python rag/ingestor.py --tenant tenant_bcbs --file path/to/formulary.csv --type formulary
+    python rag/ingestor.py --tenant tenant_bcbs --file docs/tenant_bcbs/benefits_summary.txt --type benefits
 """
 
 import argparse
 import csv
-import hashlib
 import io
 import re
 import uuid
@@ -29,10 +29,32 @@ from pathlib import Path
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
-from openai import OpenAI
 
 from core.settings import settings
 from core.tenant import get_tenant
+from core.llm import embed_texts
+
+
+def read_document_text(path: Path) -> str:
+    """Load text from .txt/.md/.csv or extract text from PDF via pdfplumber."""
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        try:
+            import pdfplumber
+        except ImportError as e:
+            raise RuntimeError(
+                "pdfplumber is required for PDF ingest. Install project deps first."
+            ) from e
+        pages: list[str] = []
+        with pdfplumber.open(path) as pdf:
+            for page in pdf.pages:
+                pages.append(page.extract_text() or "")
+        text = "\n\n".join(pages).strip()
+        if not text:
+            raise ValueError(f"No extractable text in PDF: {path}")
+        return text
+    return path.read_text(encoding="utf-8", errors="replace")
+
 
 # ── Clients ───────────────────────────────────────────────────────────────────
 
@@ -41,13 +63,6 @@ def get_qdrant() -> QdrantClient:
         url=settings.qdrant_url,
         api_key=settings.qdrant_api_key if settings.qdrant_api_key else None,
     )
-
-
-def get_openai() -> OpenAI:
-    return OpenAI(api_key=settings.openai_api_key)
-
-
-# ── Chunking ──────────────────────────────────────────────────────────────────
 
 def chunk_prose(text: str, max_tokens: int = 512, overlap: int = 64) -> list[dict]:
     """
@@ -122,13 +137,9 @@ def _extract_header(text: str) -> str:
 
 # ── Embedding ─────────────────────────────────────────────────────────────────
 
-def embed_chunks(texts: list[str], openai_client: OpenAI) -> list[list[float]]:
-    """Batch embed with text-embedding-3-small. Max 2048 inputs per call."""
-    response = openai_client.embeddings.create(
-        model=settings.openai_embedding_model,
-        input=texts,
-    )
-    return [item.embedding for item in response.data]
+def embed_chunks(texts: list[str]) -> list[list[float]]:
+    """Batch embed via configured provider (OpenAI or Ollama)."""
+    return embed_texts(texts)
 
 
 # ── Ingest ────────────────────────────────────────────────────────────────────
@@ -150,7 +161,7 @@ def ingest_file(
     print(f"  Collection: {tenant.rag_namespace}")
     print(f"  Doc type:   {doc_type}")
 
-    raw_text = path.read_text(encoding="utf-8", errors="replace")
+    raw_text = read_document_text(path)
 
     # Choose chunking strategy by doc type
     if doc_type == "formulary" and path.suffix.lower() == ".csv":
@@ -160,19 +171,19 @@ def ingest_file(
         chunks = chunk_prose(raw_text)
         print(f"  Strategy:   semantic prose chunking")
 
+
     print(f"  Chunks:     {len(chunks)}")
 
     if not chunks:
         print("  WARNING: No chunks produced. Check file content.")
         return
 
-    # Embed in batches of 100
+    # Embed in batches of 100 (OpenAI) / smaller batches still OK for Ollama
     qdrant = get_qdrant()
-    openai_client = get_openai()
     source_doc_id = path.name
     effective = effective_date or datetime.now(timezone.utc).isoformat()
 
-    batch_size = 100
+    batch_size = 100 if settings.llm_provider.lower() != "ollama" else 16
     total_inserted = 0
 
     for i in range(0, len(chunks), batch_size):
@@ -180,7 +191,7 @@ def ingest_file(
         texts = [c["text"] for c in batch]
 
         print(f"  Embedding batch {i // batch_size + 1}/{-(-len(chunks) // batch_size)}...", end=" ")
-        vectors = embed_chunks(texts, openai_client)
+        vectors = embed_chunks(texts)
         print("done")
 
         points = []
@@ -209,7 +220,7 @@ def ingest_file(
         )
         total_inserted += len(points)
 
-    print(f"\n  ✓ Inserted {total_inserted} chunks into {tenant.rag_namespace}")
+    print(f"\n  [ok] Inserted {total_inserted} chunks into {tenant.rag_namespace}")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

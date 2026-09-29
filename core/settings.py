@@ -80,10 +80,16 @@ class Settings(BaseSettings):
     )
 
     # LLM
+    llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")  # openai | ollama
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
     openai_embedding_model: str = Field(
         default="text-embedding-3-small", alias="OPENAI_EMBEDDING_MODEL"
+    )
+    ollama_base_url: str = Field(default="http://127.0.0.1:11434", alias="OLLAMA_BASE_URL")
+    ollama_model: str = Field(default="llama3.2:3b", alias="OLLAMA_MODEL")
+    ollama_embedding_model: str = Field(
+        default="nomic-embed-text", alias="OLLAMA_EMBEDDING_MODEL"
     )
 
     # Vector DB
@@ -123,6 +129,11 @@ class Settings(BaseSettings):
         "qdrant_url",
         "qdrant_api_key",
         "cors_origins",
+        "openai_api_key",
+        "ollama_base_url",
+        "ollama_model",
+        "ollama_embedding_model",
+        "llm_provider",
         mode="before",
     )
     @classmethod
@@ -130,6 +141,18 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v.strip().strip('"').strip("'")
         return v
+
+    @property
+    def effective_chat_model(self) -> str:
+        if self.llm_provider.lower().strip() == "ollama":
+            return self.ollama_model
+        return self.openai_model
+
+    @property
+    def effective_embedding_model(self) -> str:
+        if self.llm_provider.lower().strip() == "ollama":
+            return self.ollama_embedding_model
+        return self.openai_embedding_model
 
     @property
     def service_role_key(self) -> str:

@@ -24,10 +24,11 @@ from core.settings import settings
 # ── Config ────────────────────────────────────────────────────────────────────
 
 # Must match your embedding model output dimension.
-# text-embedding-3-small → 1536
-# text-embedding-3-large → 3072
-# text-embedding-ada-002 → 1536
-VECTOR_SIZE = 1536
+# OpenAI text-embedding-3-small → 1536
+# Ollama nomic-embed-text → 768
+from core.llm import embedding_dimensions
+
+VECTOR_SIZE = embedding_dimensions()
 
 # Hybrid search: store both dense vectors and sparse (BM25) vectors.
 # Sparse vectors power the keyword side of hybrid search.
@@ -95,24 +96,30 @@ def create_collection(client: QdrantClient, name: str) -> None:
         field_schema="keyword",
     )
 
-    print(f"  ✓ Created collection: {name}")
+    print(f"  [ok] Created collection: {name}")
 
 
-def setup_all_collections() -> None:
+def setup_all_collections(*, recreate: bool = False) -> None:
     print("\nConnecting to Qdrant...")
     client = get_client()
 
     # Verify connection
     info = client.get_collections()
     print(f"Connected. Existing collections: {[c.name for c in info.collections]}\n")
+    print(f"Embedding model: {settings.effective_embedding_model} (dim={VECTOR_SIZE})")
+    print(f"LLM provider:    {settings.llm_provider}\n")
 
     print("Setting up tenant collections...")
     for tenant_id, config in TENANT_REGISTRY.items():
         name = config.rag_namespace
 
         if collection_exists(client, name):
-            print(f"  – Skipping {name} (already exists)")
-            continue
+            if recreate:
+                print(f"  - Recreating {name} (delete + create for vector size {VECTOR_SIZE})")
+                client.delete_collection(name)
+            else:
+                print(f"  - Skipping {name} (already exists)")
+                continue
 
         create_collection(client, name)
 
@@ -132,5 +139,15 @@ def setup_all_collections() -> None:
     """)
 
 
+
 if __name__ == "__main__":
-    setup_all_collections()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Create CareNav Qdrant collections")
+    parser.add_argument(
+        "--recreate",
+        action="store_true",
+        help="Delete and recreate collections (needed when switching embedding dims)",
+    )
+    args = parser.parse_args()
+    setup_all_collections(recreate=args.recreate)
